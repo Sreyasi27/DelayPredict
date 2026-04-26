@@ -43,4 +43,7 @@ export const optimizeRoute = (payload) =>
 export const getHealth = () =>
   api.get('/health').then((r) => r.data);
 
+export const getWeather = () =>
+  api.get('/weather').then((r) => r.data.weather);
+
 export default api;

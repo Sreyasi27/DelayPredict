@@ -71,6 +71,18 @@ async def predict_risk_endpoint(shipment_id: str):
         raise HTTPException(status_code=500, detail="Risk prediction failed")
 
 
+# ── Weather ────────────────────────────────────────────────────────────────
+
+@router.get("/weather", tags=["weather"])
+async def get_all_weather():
+    """Return live weather conditions for all cities in the routing graph."""
+    from app.services.weather import get_bulk_weather
+    from app.utils.graph import get_city_names
+    cities = get_city_names()
+    data = await get_bulk_weather(cities)
+    return {"weather": data}
+
+
 # ── Route Optimization ─────────────────────────────────────────────────────
 
 @router.post("/optimize-route", response_model=RouteResponse, tags=["routing"])

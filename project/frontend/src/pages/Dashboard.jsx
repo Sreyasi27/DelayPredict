@@ -1,16 +1,46 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useShipments } from '../hooks/useShipments';
-import { simulateShipments } from '../services/api';
+import { simulateShipments, getWeather } from '../services/api';
 import MapView from '../components/MapView';
 import ShipmentCard from '../components/ShipmentCard';
 import AnalyticsPanel from '../components/AnalyticsPanel';
+
+const WEATHER_BG = (sev) => {
+  if (sev >= 7) return 'rgba(239,68,68,0.12)';
+  if (sev >= 4) return 'rgba(245,158,11,0.12)';
+  return 'rgba(16,185,129,0.12)';
+};
+const WEATHER_COLOR = (sev) => {
+  if (sev >= 7) return '#ef4444';
+  if (sev >= 4) return '#f59e0b';
+  return '#10b981';
+};
 
 export default function Dashboard() {
   const { shipments, loading, error } = useShipments();
   const [selectedShipment, setSelectedShipment] = useState(null);
   const [simulating, setSimulating] = useState(false);
+  const [weatherData, setWeatherData] = useState({});
+  const [weatherLoading, setWeatherLoading] = useState(true);
   const navigate = useNavigate();
+
+  /* Fetch weather on mount and every 60s */
+  useEffect(() => {
+    const fetchWeather = async () => {
+      try {
+        const data = await getWeather();
+        setWeatherData(data || {});
+      } catch {
+        /* silently fail — map still works */
+      } finally {
+        setWeatherLoading(false);
+      }
+    };
+    fetchWeather();
+    const interval = setInterval(fetchWeather, 60_000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleSimulate = async () => {
     setSimulating(true);
@@ -33,16 +63,18 @@ export default function Dashboard() {
     ? Math.round(shipments.reduce((a, s) => a + (s.delay_probability || 0), 0) / total * 100)
     : 0;
 
+  const weatherEntries = Object.entries(weatherData);
+
   return (
     <div className="page-content">
-      {/* ── Header ────────────────────────────────────────────────────── */}
+      {/* ── Header ───────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
         <div>
           <h1 style={{ background: 'linear-gradient(135deg, #f0f4ff, #3b82f6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
             Supply Chain Command
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '0.2rem' }}>
-            Real-time disruption prediction · AI-powered rerouting
+            Real-time disruption prediction · AI-powered rerouting · Live weather
           </p>
         </div>
         <button
@@ -55,23 +87,66 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* ── Stat strip ────────────────────────────────────────────────── */}
-      <div className="stat-grid" style={{ marginBottom: '1.25rem' }}>
+      {/* ── Stat strip ───────────────────────────────────────────────── */}
+      <div className="stat-grid" style={{ marginBottom: '1rem' }}>
         <StatCard value={total} label="Total Shipments" accent="var(--accent-blue)" icon="📦" />
         <StatCard value={atRisk} label="High Risk" accent="var(--risk-high)" icon="⛔" />
         <StatCard value={delivered} label="Delivered" accent="var(--accent-green)" icon="✅" />
         <StatCard value={`${avgRisk}%`} label="Avg Delay Risk" accent={avgRisk > 65 ? 'var(--risk-high)' : avgRisk > 35 ? 'var(--risk-medium)' : 'var(--risk-low)'} icon="🧠" />
       </div>
 
-      {/* ── Main grid ─────────────────────────────────────────────────── */}
+      {/* ── Weather strip ─────────────────────────────────────────────── */}
+      {!weatherLoading && weatherEntries.length > 0 && (
+        <div style={{
+          marginBottom: '1.25rem',
+          background: 'var(--bg-secondary)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-lg)',
+          padding: '0.75rem 1rem',
+        }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '0.6rem' }}>
+            🌤 Live City Weather
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+            {weatherEntries.map(([city, w]) => (
+              <div
+                key={city}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '4px 10px',
+                  borderRadius: 999,
+                  background: WEATHER_BG(w.severity),
+                  border: `1px solid ${WEATHER_COLOR(w.severity)}44`,
+                  fontSize: '0.8rem',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <span>{w.icon || '🌡️'}</span>
+                <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{city}</span>
+                <span style={{ color: WEATHER_COLOR(w.severity), fontWeight: 600 }}>
+                  {w.description}
+                </span>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>
+                  {w.severity?.toFixed(1)}/10
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Main grid ──────────────────────────────────────────────────── */}
       <div className="dashboard-grid">
-        {/* Left — map + shipment list */}
+        {/* Left — map */}
         <div className="dashboard-left">
           <div className="map-container" style={{ flex: '1 1 0' }}>
             <MapView
               shipments={shipments}
               selectedId={selectedShipment?.id}
               onSelectShipment={handleSelectShipment}
+              weatherData={weatherData}
             />
           </div>
         </div>

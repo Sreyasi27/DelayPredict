@@ -8,6 +8,30 @@ logger = get_logger(__name__)
 OWM_API_KEY: str = os.getenv("OPENWEATHERMAP_API_KEY", "")
 WEATHER_MODE: str = os.getenv("WEATHER_MODE", "mock")
 
+_ICON_MAP = {
+    "thunderstorm": "⛈️",
+    "drizzle": "🌦️",
+    "rain": "🌧️",
+    "snow": "❄️",
+    "fog": "🌫️",
+    "haze": "🌫️",
+    "smoke": "🌫️",
+    "mist": "🌫️",
+    "clear": "☀️",
+    "sunny": "☀️",
+    "cloud": "☁️",
+    "overcast": "☁️",
+    "partly": "⛅",
+}
+
+
+def get_weather_icon(description: str) -> str:
+    desc_lower = description.lower()
+    for keyword, icon in _ICON_MAP.items():
+        if keyword in desc_lower:
+            return icon
+    return "🌡️"
+
 # OpenWeatherMap condition ID ranges → severity 0-10
 _SEVERITY_MAP = {
     (200, 300): 9.0,  # Thunderstorm
@@ -50,9 +74,11 @@ async def get_weather_severity(city: str) -> dict:
         base = _MOCK.get(city, {"severity": 3.0, "description": "Unknown"})
         # Small random variance to make demo feel live
         jitter = random.uniform(-0.4, 0.4)
+        desc = base["description"]
         return {
             "severity": round(max(0.0, min(10.0, base["severity"] + jitter)), 2),
-            "description": base["description"],
+            "description": desc,
+            "icon": get_weather_icon(desc),
         }
 
     try:
@@ -66,10 +92,11 @@ async def get_weather_severity(city: str) -> dict:
             desc = data["weather"][0]["description"].title()
             sev = _severity_from_id(wid)
             logger.info(f"OWM {city}: {desc} (id={wid}, severity={sev})")
-            return {"severity": sev, "description": desc}
+            return {"severity": sev, "description": desc, "icon": get_weather_icon(desc)}
     except Exception as exc:
         logger.warning(f"OWM failed for {city}: {exc} — using mock fallback")
-        return _MOCK.get(city, {"severity": 3.0, "description": "Unknown"})
+        base = _MOCK.get(city, {"severity": 3.0, "description": "Unknown"})
+        return {**base, "icon": get_weather_icon(base["description"])}
 
 
 async def get_bulk_weather(cities: list) -> dict:
