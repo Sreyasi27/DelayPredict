@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useShipments } from '../hooks/useShipments';
 import { simulateShipments, getWeather } from '../services/api';
@@ -18,9 +18,10 @@ const WEATHER_COLOR = (sev) => {
 };
 
 export default function Dashboard() {
-  const { shipments, loading, error } = useShipments();
+  const { shipments, loading, error, refetch } = useShipments();
   const [selectedShipment, setSelectedShipment] = useState(null);
   const [simulating, setSimulating] = useState(false);
+  const [simToast, setSimToast] = useState(null);   // success/error message
   const [weatherData, setWeatherData] = useState({});
   const [weatherLoading, setWeatherLoading] = useState(true);
   const navigate = useNavigate();
@@ -42,19 +43,33 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, []);
 
+  const showToast = useCallback((msg, type = 'success') => {
+    setSimToast({ msg, type });
+    setTimeout(() => setSimToast(null), 3500);
+  }, []);
+
   const handleSimulate = async () => {
     setSimulating(true);
+    setSelectedShipment(null);
     try {
-      await simulateShipments();
-      setSelectedShipment(null);
+      const result = await simulateShipments();
+      // Immediately refresh the shipment list — don't wait for next poll
+      await refetch();
+      showToast(`✅ ${result?.message || '5 shipments created'} — simulation running!`);
     } catch (err) {
-      alert(`Simulation failed: ${err.message}`);
+      showToast(`⛔ Simulation failed: ${err.message}`, 'error');
     } finally {
       setSimulating(false);
     }
   };
 
+  // Clicking a card selects it on the map; double-click / View button navigates
+  const handleCardClick = (s) => {
+    setSelectedShipment(s);
+  };
+
   const handleSelectShipment = (s) => setSelectedShipment(s);
+  const handleViewDetail = (s) => navigate(`/shipment/${s.id}`);
 
   const total = shipments.length;
   const atRisk = shipments.filter((s) => s.risk_level === 'high' || s.status === 'at_risk').length;
@@ -82,10 +97,33 @@ export default function Dashboard() {
           className="btn btn-primary"
           onClick={handleSimulate}
           disabled={simulating}
+          style={{ position: 'relative', minWidth: 160 }}
         >
-          {simulating ? <><div className="spinner" style={{ width: 16, height: 16 }} /> Simulating…</> : '⚡ New Simulation'}
+          {simulating
+            ? <><div className="spinner" style={{ width: 16, height: 16 }} /> Simulating…</>
+            : '⚡ New Simulation'}
         </button>
       </div>
+
+      {/* ── Toast notification ──────────────────────────────────────────────── */}
+      {simToast && (
+        <div style={{
+          position: 'fixed', bottom: '1.5rem', right: '1.5rem', zIndex: 9999,
+          background: simToast.type === 'error' ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)',
+          border: `1px solid ${simToast.type === 'error' ? 'rgba(239,68,68,0.4)' : 'rgba(16,185,129,0.4)'}`,
+          color: simToast.type === 'error' ? '#ef4444' : '#10b981',
+          borderRadius: 'var(--radius-lg)',
+          padding: '0.75rem 1.25rem',
+          fontSize: '0.9rem',
+          fontWeight: 600,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          backdropFilter: 'blur(10px)',
+          animation: 'fadeIn 0.3s ease',
+          maxWidth: 380,
+        }}>
+          {simToast.msg}
+        </div>
+      )}
 
       {/* ── Stat strip ───────────────────────────────────────────────── */}
       <div className="stat-grid" style={{ marginBottom: '1rem' }}>
@@ -171,7 +209,8 @@ export default function Dashboard() {
                   key={s.id}
                   shipment={s}
                   selected={selectedShipment?.id === s.id}
-                  onClick={() => navigate(`/shipment/${s.id}`)}
+                  onClick={() => handleCardClick(s)}
+                  onViewDetail={() => handleViewDetail(s)}
                 />
               ))}
             </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getShipment, optimizeRoute, getWeather } from '../services/api';
-import { subscribeToShipment } from '../services/firebase';
+import { subscribeToShipment, firebaseAvailable } from '../services/firebase';
 import { useRisk } from '../hooks/useRisk';
 import RiskIndicator from '../components/RiskIndicator';
 import RouteComparison from '../components/RouteComparison';
@@ -27,12 +27,24 @@ export default function ShipmentDetail() {
   // ── Load & subscribe to shipment ────────────────────────────────────
   useEffect(() => {
     let unsub = () => {};
-    getShipment(id)
-      .then((data) => { setShipment(data); setLoadingShipment(false); })
-      .catch(() => setLoadingShipment(false));
+    let pollInterval = null;
 
-    unsub = subscribeToShipment(id, (data) => setShipment(data));
-    return () => unsub();
+    const fetchOnce = () =>
+      getShipment(id)
+        .then((data) => { setShipment(data); setLoadingShipment(false); })
+        .catch(() => setLoadingShipment(false));
+
+    fetchOnce();
+
+    if (firebaseAvailable) {
+      // Real-time Firestore listener
+      unsub = subscribeToShipment(id, (data) => setShipment(data));
+    } else {
+      // REST polling every 10s as fallback
+      pollInterval = setInterval(fetchOnce, 10_000);
+    }
+
+    return () => { unsub(); if (pollInterval) clearInterval(pollInterval); };
   }, [id]);
 
   // ── Fetch weather ───────────────────────────────────────────────────

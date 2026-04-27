@@ -1,4 +1,3 @@
-import { useNavigate } from 'react-router-dom';
 import RiskIndicator from './RiskIndicator';
 
 const CARGO_ICONS = {
@@ -7,12 +6,20 @@ const CARGO_ICONS = {
   'Consumer Goods': '📦', 'Chemical Supplies': '🧪',
 };
 
-export default function ShipmentCard({ shipment, selected, onClick }) {
+const STATUS_COLORS = {
+  in_transit: '#3b82f6',
+  at_risk: '#f59e0b',
+  delivered: '#10b981',
+  delayed: '#ef4444',
+};
+
+export default function ShipmentCard({ shipment, selected, onClick, onViewDetail }) {
   const { id, origin, destination, current_location, status, cargo,
     weight_kg, distance_km, delay_probability, risk_level, route, route_index } = shipment;
 
   const progress = route && route.length > 1 ? Math.round((route_index / (route.length - 1)) * 100) : 0;
   const icon = CARGO_ICONS[cargo] || '📦';
+  const statusColor = STATUS_COLORS[status] || 'var(--text-muted)';
 
   return (
     <div
@@ -22,12 +29,18 @@ export default function ShipmentCard({ shipment, selected, onClick }) {
       role="button"
       tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && onClick?.()}
+      style={{ cursor: 'pointer' }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem', flexWrap: 'wrap' }}>
             <span className="shipment-id">{id}</span>
-            <span className={`status-badge ${status}`}>{status?.replace('_', ' ')}</span>
+            <span
+              className={`status-badge ${status}`}
+              style={{ borderColor: `${statusColor}44`, color: statusColor }}
+            >
+              {status?.replace('_', ' ')}
+            </span>
           </div>
           <div className="shipment-route">
             {icon} {origin} → {destination}
@@ -58,6 +71,28 @@ export default function ShipmentCard({ shipment, selected, onClick }) {
             style={{ width: `${progress}%` }}
           />
         </div>
+      </div>
+
+      {/* View Details button */}
+      <div style={{ marginTop: '0.6rem', display: 'flex', justifyContent: 'flex-end' }}>
+        <button
+          id={`btn-detail-${id}`}
+          className="btn btn-ghost"
+          style={{
+            fontSize: '0.78rem',
+            padding: '3px 10px',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-sm)',
+            color: 'var(--accent-cyan)',
+            background: 'rgba(6,182,212,0.06)',
+          }}
+          onClick={(e) => {
+            e.stopPropagation(); // don't trigger card select
+            onViewDetail?.();
+          }}
+        >
+          View Details →
+        </button>
       </div>
     </div>
   );

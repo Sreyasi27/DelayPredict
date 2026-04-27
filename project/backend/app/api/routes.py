@@ -11,6 +11,7 @@ from app.services.risk_engine import predict_risk
 from app.services.route_optimizer import optimize_route
 from app.ml.model import get_model
 from app.utils.logger import get_logger
+import asyncio
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -31,10 +32,16 @@ def health():
 # ── Shipments ──────────────────────────────────────────────────────────────
 
 @router.post("/simulate-shipments", tags=["shipments"])
-def simulate_shipments():
-    """Generate 5 fresh shipments and start the simulation loop."""
+async def simulate_shipments():
+    """Generate 5 fresh shipments and (re)start the simulation loop."""
+    # Stop any previous loop first so we don't get duplicates
+    simulation.stop_simulation()
+    await asyncio.sleep(0.1)          # let the old loop exit cleanly
+
     shipments = simulation.generate_shipments()
-    logger.info(f"Simulated {len(shipments)} shipments")
+    simulation.start_simulation_loop(interval=15)  # restart loop
+
+    logger.info(f"Simulated {len(shipments)} shipments — loop restarted")
     return {"message": f"{len(shipments)} shipments created", "shipments": shipments}
 
 
