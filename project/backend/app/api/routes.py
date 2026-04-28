@@ -5,6 +5,8 @@ from app.models.schemas import (
     RiskResponse,
     HealthResponse,
     Shipment,
+    AnalyzeShipmentRequest,
+    AnalyzeShipmentResponse,
 )
 from app.services import simulation, firestore_service as db
 from app.services.risk_engine import predict_risk
@@ -34,9 +36,9 @@ def health():
 @router.post("/simulate-shipments", tags=["shipments"])
 async def simulate_shipments():
     """Generate 5 fresh shipments and (re)start the simulation loop."""
-    # Stop any previous loop first so we don't get duplicates
+    # Stop any previous loop (cancels the task immediately)
     simulation.stop_simulation()
-    await asyncio.sleep(0.1)          # let the old loop exit cleanly
+    await asyncio.sleep(0)            # yield to event loop so cancellation propagates
 
     shipments = simulation.generate_shipments()
     simulation.start_simulation_loop(interval=15)  # restart loop
@@ -62,6 +64,31 @@ def get_shipment(shipment_id: str):
     if not data:
         raise HTTPException(status_code=404, detail=f"Shipment {shipment_id} not found")
     return data
+
+
+@router.patch("/shipments/{shipment_id}/deliver", tags=["shipments"])
+def mark_delivered(shipment_id: str):
+    """Mark a shipment as delivered immediately (prototype/demo action)."""
+    from datetime import datetime, timezone
+    data = db.get_shipment(shipment_id)
+    if not data:
+        raise HTTPException(status_code=404, detail=f"Shipment {shipment_id} not found")
+
+    now = datetime.now(timezone.utc).isoformat()
+    fields = {
+        "status": "delivered",
+        "route_index": len(data.get("route", [])) - 1,  # jump to end of route
+        "current_location": data.get("destination", data.get("current_location")),
+        "updated_at": now,
+    }
+    db.update_shipment_fields(shipment_id, fields)
+
+    # Also update in-memory simulation store so map updates instantly
+    simulation.mark_shipment_delivered(shipment_id, fields)
+
+    logger.info(f"Shipment {shipment_id} manually marked as delivered")
+    return {"message": f"{shipment_id} marked as delivered", "shipment_id": shipment_id}
+
 
 
 # ── Risk Prediction ────────────────────────────────────────────────────────
@@ -124,3 +151,39 @@ async def optimize_route_endpoint(req: RouteOptimizeRequest):
     except Exception as exc:
         logger.error(f"Route optimization error: {exc}")
         raise HTTPException(status_code=500, detail="Route optimization failed")
+
+
+# ── Hybrid Intelligence Decision Pipeline ──────────────────────────────────
+
+@router.post(
+    "/analyze-shipment",
+    response_model=AnalyzeShipmentResponse,
+    tags=["intelligence"],
+    summary="Full hybrid pipeline: Weather → ML → Gemini AI → Dijkstra",
+)
+async def analyze_shipment(req: AnalyzeShipmentRequest):
+    """
+    Runs the complete Hybrid Intelligence Decision Pipeline:
+    1. Fetches real-time weather for the origin city
+    2. Runs ML delay prediction
+    3. Applies decision rules (continue / monitor / reroute)
+    4. Generates a Gemini AI explanation
+    5. If reroute required, runs Dijkstra route optimization
+    6. Returns a unified structured response
+    """
+    from app.services.decision_engine import run_analysis
+
+    try:
+        result = await run_analysis(
+            shipment_id=req.shipment_id,
+            origin=req.origin,
+            destination=req.destination,
+            distance=req.distance,
+            traffic_score=req.traffic_score,
+            weight=req.weight,
+            carrier_rating=req.carrier_rating,
+        )
+        return result
+    except Exception as exc:
+        logger.error(f"Pipeline error [{req.shipment_id}]: {exc}")
+        raise HTTPException(status_code=500, detail=f"Pipeline failed: {str(exc)}")

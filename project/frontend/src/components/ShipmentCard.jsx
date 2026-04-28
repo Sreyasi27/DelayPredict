@@ -13,12 +13,25 @@ const STATUS_COLORS = {
   delayed: '#ef4444',
 };
 
-export default function ShipmentCard({ shipment, selected, onClick, onViewDetail }) {
-  const { id, origin, destination, current_location, status, cargo,
-    weight_kg, distance_km, delay_probability, risk_level, route, route_index } = shipment;
+export default function ShipmentCard({
+  shipment,
+  selected,
+  onClick,
+  onViewDetail,
+  onMarkDelivered,   // new: called when user clicks "Mark Delivered"
+}) {
+  const {
+    id, origin, destination, current_location, status, cargo,
+    weight_kg, distance_km, delay_probability, risk_level, route, route_index,
+  } = shipment;
 
-  const progress = route && route.length > 1 ? Math.round((route_index / (route.length - 1)) * 100) : 0;
-  const icon = CARGO_ICONS[cargo] || '📦';
+  const isDelivered = status === 'delivered';
+  const progress    = isDelivered
+    ? 100
+    : route && route.length > 1
+      ? Math.round((route_index / (route.length - 1)) * 100)
+      : 0;
+  const icon        = CARGO_ICONS[cargo] || '📦';
   const statusColor = STATUS_COLORS[status] || 'var(--text-muted)';
 
   return (
@@ -29,7 +42,7 @@ export default function ShipmentCard({ shipment, selected, onClick, onViewDetail
       role="button"
       tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && onClick?.()}
-      style={{ cursor: 'pointer' }}
+      style={{ cursor: 'pointer', opacity: isDelivered ? 0.72 : 1 }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -39,7 +52,7 @@ export default function ShipmentCard({ shipment, selected, onClick, onViewDetail
               className={`status-badge ${status}`}
               style={{ borderColor: `${statusColor}44`, color: statusColor }}
             >
-              {status?.replace('_', ' ')}
+              {status?.replace(/_/g, ' ')}
             </span>
           </div>
           <div className="shipment-route">
@@ -62,19 +75,45 @@ export default function ShipmentCard({ shipment, selected, onClick, onViewDetail
       <div style={{ marginTop: '0.75rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
           <span>{origin}</span>
-          <span style={{ color: 'var(--text-secondary)' }}>{progress}% complete</span>
+          <span style={{ color: 'var(--text-secondary)' }}>
+            {isDelivered ? '✅ Delivered' : `${progress}% complete`}
+          </span>
           <span>{destination}</span>
         </div>
         <div className="progress-bar">
           <div
-            className={`progress-fill ${risk_level || 'low'}`}
+            className={`progress-fill ${isDelivered ? 'low' : risk_level || 'low'}`}
             style={{ width: `${progress}%` }}
           />
         </div>
       </div>
 
-      {/* View Details button */}
-      <div style={{ marginTop: '0.6rem', display: 'flex', justifyContent: 'flex-end' }}>
+      {/* Action buttons row */}
+      <div style={{ marginTop: '0.6rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+        {/* ── Mark Delivered button ── only show when not already delivered */}
+        {!isDelivered && (
+          <button
+            id={`btn-deliver-${id}`}
+            className="btn btn-ghost"
+            title="Mark this shipment as delivered"
+            style={{
+              fontSize: '0.78rem',
+              padding: '3px 10px',
+              border: '1px solid rgba(16,185,129,0.35)',
+              borderRadius: 'var(--radius-sm)',
+              color: '#10b981',
+              background: 'rgba(16,185,129,0.08)',
+              cursor: 'pointer',
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onMarkDelivered?.(id);
+            }}
+          >
+            ✅ Delivered
+          </button>
+        )}
+
         <button
           id={`btn-detail-${id}`}
           className="btn btn-ghost"
@@ -87,7 +126,7 @@ export default function ShipmentCard({ shipment, selected, onClick, onViewDetail
             background: 'rgba(6,182,212,0.06)',
           }}
           onClick={(e) => {
-            e.stopPropagation(); // don't trigger card select
+            e.stopPropagation();
             onViewDetail?.();
           }}
         >

@@ -1,6 +1,5 @@
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend,
+  PieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer,
 } from 'recharts';
 
 const RISK_COLORS = {
@@ -11,6 +10,101 @@ const RISK_COLORS = {
 
 const STATUS_COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#ef4444'];
 
+// ── Pure-CSS bar chart — renders correctly regardless of container type ──────
+function CSSBarChart({ data }) {
+  const BAR_H = 110; // px — total drawable height for bars
+
+  return (
+    <div style={{ width: '100%' }}>
+      {/* Bar area */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'flex-end',
+        gap: 8,
+        height: BAR_H,
+        padding: '0 4px',
+      }}>
+        {data.map((entry, i) => {
+          const pct = Math.max(entry.risk, 0);           // 0–100
+          const barH = pct === 0
+            ? 4                                           // minimum 4px so bar is always visible
+            : Math.round((pct / 100) * BAR_H);
+
+          return (
+            <div
+              key={i}
+              title={`${entry.name}: ${pct}% risk`}
+              style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                height: '100%',
+                gap: 4,
+                cursor: 'default',
+              }}
+            >
+              {/* Risk % label above bar */}
+              <span style={{
+                fontSize: 10,
+                color: pct === 0 ? 'var(--text-muted)' : entry.fill,
+                fontWeight: 600,
+                lineHeight: 1,
+                opacity: pct === 0 ? 0.5 : 1,
+              }}>
+                {pct}%
+              </span>
+
+              {/* The bar itself */}
+              <div
+                style={{
+                  width: '100%',
+                  height: barH,
+                  background: pct === 0
+                    ? 'rgba(136,153,187,0.25)'          // grey ghost bar for 0%
+                    : `linear-gradient(to top, ${entry.fill}dd, ${entry.fill}88)`,
+                  borderRadius: '4px 4px 0 0',
+                  boxShadow: pct > 0 ? `0 0 8px ${entry.fill}55` : 'none',
+                  transition: 'height 0.5s cubic-bezier(0.34,1.56,0.64,1)',
+                }}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      {/* X-axis divider */}
+      <div style={{
+        height: 1,
+        background: 'rgba(136,153,187,0.15)',
+        margin: '0 4px',
+      }} />
+
+      {/* X-axis labels */}
+      <div style={{
+        display: 'flex',
+        gap: 8,
+        padding: '4px 4px 0',
+      }}>
+        {data.map((entry, i) => (
+          <div key={i} style={{
+            flex: 1,
+            textAlign: 'center',
+            fontSize: 10,
+            color: 'var(--text-secondary)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>
+            {entry.name.length > 6 ? entry.name.slice(0, 6) : entry.name}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function AnalyticsPanel({ shipments }) {
   if (!shipments || shipments.length === 0) {
     return (
@@ -20,12 +114,6 @@ export default function AnalyticsPanel({ shipments }) {
       </div>
     );
   }
-
-  // ── Derived stats ────────────────────────────────────────────────────
-  const total = shipments.length;
-  const delayed = shipments.filter((s) => s.status === 'delayed' || s.status === 'at_risk').length;
-  const delivered = shipments.filter((s) => s.status === 'delivered').length;
-  const avgRisk = shipments.reduce((sum, s) => sum + (s.delay_probability || 0), 0) / total;
 
   // Bar chart data — risk per shipment
   const barData = shipments.map((s) => ({
@@ -43,75 +131,51 @@ export default function AnalyticsPanel({ shipments }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      {/* Stat row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
-        <StatCard value={total} label="Total Shipments" color="var(--accent-blue)" />
-        <StatCard value={delayed} label="At Risk / Delayed" color="var(--accent-amber)" />
-        <StatCard value={`${Math.round(avgRisk * 100)}%`} label="Avg Delay Risk" color={avgRisk > 0.65 ? 'var(--risk-high)' : avgRisk > 0.35 ? 'var(--risk-medium)' : 'var(--risk-low)'} />
-      </div>
 
-      {/* Risk bar chart */}
+      {/* ── Risk bar chart (CSS-based, always visible) ── */}
       <div className="card">
         <div className="card-header">
           <span className="card-title">Delay Risk per Shipment</span>
         </div>
-        <ResponsiveContainer width="100%" height={140}>
-          <BarChart data={barData} barSize={28} margin={{ top: 4, right: 8, bottom: 4, left: -24 }}>
-            <XAxis dataKey="name" tick={{ fill: '#8899bb', fontSize: 11 }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: '#8899bb', fontSize: 11 }} axisLine={false} tickLine={false} domain={[0, 100]} />
-            <Tooltip
-              contentStyle={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 8, fontSize: 12 }}
-              formatter={(v) => [`${v}%`, 'Risk']}
-              cursor={{ fill: 'rgba(255,255,255,0.04)' }}
-            />
-            <Bar dataKey="risk" radius={[4, 4, 0, 0]}>
-              {barData.map((entry, i) => (
-                <Cell key={i} fill={entry.fill} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        <CSSBarChart data={barData} />
       </div>
 
-      {/* Status pie */}
+      {/* ── Status pie (Recharts) ── */}
       <div className="card">
         <div className="card-header">
           <span className="card-title">Status Distribution</span>
         </div>
-        <ResponsiveContainer width="100%" height={150}>
-          <PieChart>
-            <Pie
-              data={pieData}
-              dataKey="value"
-              nameKey="name"
-              cx="50%"
-              cy="50%"
-              innerRadius={40}
-              outerRadius={60}
-              paddingAngle={3}
-            >
-              {pieData.map((_, i) => (
-                <Cell key={i} fill={STATUS_COLORS[i % STATUS_COLORS.length]} />
-              ))}
-            </Pie>
-            <Tooltip
-              contentStyle={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 8, fontSize: 12 }}
-            />
-            <Legend
-              formatter={(v) => <span style={{ color: '#8899bb', fontSize: 11 }}>{v.replace('_', ' ')}</span>}
-            />
-          </PieChart>
-        </ResponsiveContainer>
+        <div style={{ width: '100%', height: 170 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={pieData}
+                dataKey="value"
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                innerRadius={42}
+                outerRadius={62}
+                paddingAngle={3}
+              >
+                {pieData.map((_, i) => (
+                  <Cell key={i} fill={STATUS_COLORS[i % STATUS_COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip
+                contentStyle={{ background: '#111827', border: '1px solid #1f2937', borderRadius: 8, fontSize: 12, color: '#f0f4ff' }}
+                labelStyle={{ color: '#8899bb' }}
+                itemStyle={{ color: '#f0f4ff' }}
+              />
+              <Legend
+                wrapperStyle={{ color: '#f0f4ff' }}
+                formatter={(v) => <span style={{ color: '#f0f4ff', fontSize: 11 }}>{v.replace(/_/g, ' ')}</span>}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
       </div>
-    </div>
-  );
-}
 
-function StatCard({ value, label, color }) {
-  return (
-    <div className="stat-card">
-      <div className="stat-value" style={{ color }}>{value}</div>
-      <div className="stat-label">{label}</div>
     </div>
   );
 }

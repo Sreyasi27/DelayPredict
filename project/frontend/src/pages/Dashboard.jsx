@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useShipments } from '../hooks/useShipments';
-import { simulateShipments, getWeather } from '../services/api';
+import { simulateShipments, getWeather, markDelivered } from '../services/api';
 import MapView from '../components/MapView';
 import ShipmentCard from '../components/ShipmentCard';
 import AnalyticsPanel from '../components/AnalyticsPanel';
+import { AIAnalyzeForm } from '../components/AIPanel';
 
 const WEATHER_BG = (sev) => {
   if (sev >= 7) return 'rgba(239,68,68,0.12)';
@@ -19,6 +20,7 @@ const WEATHER_COLOR = (sev) => {
 
 export default function Dashboard() {
   const { shipments, loading, error, refetch } = useShipments();
+  const [localShipments, setLocalShipments] = useState(null); // optimistic overrides
   const [selectedShipment, setSelectedShipment] = useState(null);
   const [simulating, setSimulating] = useState(false);
   const [simToast, setSimToast] = useState(null);   // success/error message
@@ -51,6 +53,7 @@ export default function Dashboard() {
   const handleSimulate = async () => {
     setSimulating(true);
     setSelectedShipment(null);
+    setLocalShipments(null); // clear overrides on new simulation
     try {
       const result = await simulateShipments();
       // Immediately refresh the shipment list — don't wait for next poll
@@ -64,18 +67,40 @@ export default function Dashboard() {
   };
 
   // Clicking a card selects it on the map; double-click / View button navigates
-  const handleCardClick = (s) => {
-    setSelectedShipment(s);
-  };
+  const handleCardClick = (s) => { setSelectedShipment(s); };
 
   const handleSelectShipment = (s) => setSelectedShipment(s);
-  const handleViewDetail = (s) => navigate(`/shipment/${s.id}`);
+  const handleViewDetail     = (s) => navigate(`/shipment/${s.id}`);
 
-  const total = shipments.length;
-  const atRisk = shipments.filter((s) => s.risk_level === 'high' || s.status === 'at_risk').length;
-  const delivered = shipments.filter((s) => s.status === 'delivered').length;
-  const avgRisk = total > 0
-    ? Math.round(shipments.reduce((a, s) => a + (s.delay_probability || 0), 0) / total * 100)
+  // ── Mark Delivered (optimistic + backend) ───────────────────────────────
+  const handleMarkDelivered = async (shipmentId) => {
+    // Optimistically update local state immediately so charts + counter reflect it
+    setLocalShipments((prev) => {
+      const base = prev ?? shipments;
+      return base.map((s) =>
+        s.id === shipmentId
+          ? { ...s, status: 'delivered', route_index: (s.route?.length ?? 1) - 1, current_location: s.destination }
+          : s
+      );
+    });
+    try {
+      await markDelivered(shipmentId);
+      await refetch(); // sync with backend
+      setLocalShipments(null); // drop overrides once backend is in sync
+    } catch (err) {
+      showToast(`⛔ Could not mark delivered: ${err.message}`, 'error');
+      setLocalShipments(null); // revert
+    }
+  };
+
+  // Use locally overridden list when available (optimistic updates)
+  const displayShipments = localShipments ?? shipments;
+
+  const total     = displayShipments.length;
+  const atRisk    = displayShipments.filter((s) => s.risk_level === 'high' || s.status === 'at_risk').length;
+  const delivered = displayShipments.filter((s) => s.status === 'delivered').length;
+  const avgRisk   = total > 0
+    ? Math.round(displayShipments.reduce((a, s) => a + (s.delay_probability || 0), 0) / total * 100)
     : 0;
 
   const weatherEntries = Object.entries(weatherData);
@@ -181,7 +206,7 @@ export default function Dashboard() {
         <div className="dashboard-left">
           <div className="map-container" style={{ flex: '1 1 0' }}>
             <MapView
-              shipments={shipments}
+              shipments={displayShipments}
               selectedId={selectedShipment?.id}
               onSelectShipment={handleSelectShipment}
               weatherData={weatherData}
@@ -198,31 +223,30 @@ export default function Dashboard() {
               {loading && <div className="spinner" style={{ width: 16, height: 16 }} />}
             </div>
             {error && <p style={{ color: 'var(--risk-high)', fontSize: '0.85rem', padding: '0.5rem 0' }}>⚠ {error}</p>}
-            {!loading && shipments.length === 0 && (
+            {!loading && displayShipments.length === 0 && (
               <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '1.5rem 0' }}>
                 No shipments — click <strong>⚡ New Simulation</strong>
               </p>
             )}
             <div className="shipment-list">
-              {shipments.map((s) => (
+              {displayShipments.map((s) => (
                 <ShipmentCard
                   key={s.id}
                   shipment={s}
                   selected={selectedShipment?.id === s.id}
                   onClick={() => handleCardClick(s)}
                   onViewDetail={() => handleViewDetail(s)}
+                  onMarkDelivered={handleMarkDelivered}
                 />
               ))}
             </div>
           </div>
 
           {/* Analytics */}
-          <div className="card">
-            <div className="card-header">
-              <span className="card-title">Analytics</span>
-            </div>
-            <AnalyticsPanel shipments={shipments} />
-          </div>
+          <AnalyticsPanel shipments={displayShipments} />
+
+          {/* AI Intelligence Panel */}
+          <AIPipelineSection />
         </div>
       </div>
     </div>
@@ -242,3 +266,50 @@ function StatCard({ value, label, accent, icon }) {
     </div>
   );
 }
+
+function AIPipelineSection() {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <div className="card" style={{ overflow: 'hidden' }}>
+      {/* Collapsible header */}
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          display:        'flex',
+          alignItems:     'center',
+          justifyContent: 'space-between',
+          width:          '100%',
+          background:     'transparent',
+          border:         'none',
+          cursor:         'pointer',
+          padding:        0,
+          marginBottom:   open ? '1rem' : 0,
+        }}
+      >
+        <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{
+            background:   'linear-gradient(135deg, #6366f1, #8b5cf6)',
+            borderRadius: 8,
+            padding:      '3px 8px',
+            fontSize:     11,
+            fontWeight:   700,
+            color:        '#fff',
+            letterSpacing: 0.5,
+          }}>AI</span>
+          Hybrid Intelligence Pipeline
+        </span>
+        <span style={{
+          color:      'var(--text-secondary)',
+          fontSize:   18,
+          transition: 'transform 0.25s',
+          transform:  open ? 'rotate(180deg)' : 'rotate(0deg)',
+        }}>▾</span>
+      </button>
+
+      {/* Expandable body */}
+      {open && <AIAnalyzeForm />}
+    </div>
+  );
+}
+

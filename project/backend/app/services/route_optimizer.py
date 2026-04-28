@@ -35,8 +35,8 @@ def optimize_route(
     time_saved_min = max(0.0, (orig_hours - opt_hours) * 60)
 
     logger.info(
-        f"[{shipment_id}] Original: {' → '.join(orig_path)} ({orig_hours:.1f}h) | "
-        f"Optimized: {' → '.join(opt_path)} ({opt_hours:.1f}h) | "
+        f"[{shipment_id}] Original: {' -> '.join(orig_path)} ({orig_hours:.1f}h) | "
+        f"Optimized: {' -> '.join(opt_path)} ({opt_hours:.1f}h) | "
         f"Saved: {time_saved_min:.0f} min"
     )
 

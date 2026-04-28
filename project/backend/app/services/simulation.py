@@ -28,7 +28,8 @@ _SHIPMENT_PAIRS = [
 
 # Live simulation state: id -> shipment dict
 _active_shipments: dict = {}
-_simulation_running = False
+_simulation_task: asyncio.Task = None
+_stop_event: asyncio.Event = None
 
 
 def _now() -> str:
@@ -74,7 +75,7 @@ def generate_shipments() -> List[dict]:
         _active_shipments[s["id"]] = s
         db.write_shipment(s)
         shipments.append(s)
-        logger.info(f"Created shipment {s['id']}: {origin} → {dest}")
+        logger.info(f"Created shipment {s['id']}: {origin} -> {dest}")
 
     return shipments
 
@@ -105,12 +106,25 @@ def _advance_shipment(shipment: dict) -> dict:
 
 async def _simulation_loop(interval_seconds: int = 15):
     """Background loop: advances all active shipments every interval."""
-    global _simulation_running
+    global _stop_event
     logger.info(f"Simulation loop started (interval={interval_seconds}s)")
-    _simulation_running = True
 
-    while _simulation_running:
-        await asyncio.sleep(interval_seconds)
+    while True:
+        # Wait for interval OR stop signal — whichever comes first
+        try:
+            await asyncio.wait_for(
+                asyncio.shield(_stop_event.wait()),
+                timeout=interval_seconds,
+            )
+            # stop_event was set — exit cleanly
+            logger.info("Simulation loop received stop signal — exiting.")
+            return
+        except asyncio.TimeoutError:
+            pass  # Normal tick — proceed with update
+
+        if _stop_event.is_set():
+            logger.info("Simulation loop stop event detected — exiting.")
+            return
 
         if not _active_shipments:
             logger.info("No active shipments - regenerating ...")
@@ -134,19 +148,31 @@ async def _simulation_loop(interval_seconds: int = 15):
                 },
             )
             logger.info(
-                f"[{sid}] → {updated['current_location']} (step {updated['route_index']}/{len(updated['route'])-1})"
+                f"[{sid}] -> {updated['current_location']} (step {updated['route_index']}/{len(updated['route'])-1})"
             )
 
         if all_delivered:
             logger.info("All shipments delivered — restarting simulation …")
-            await asyncio.sleep(5)
-            generate_shipments()
+            try:
+                await asyncio.wait_for(
+                    asyncio.shield(_stop_event.wait()),
+                    timeout=5,
+                )
+                return  # stopped during restart delay
+            except asyncio.TimeoutError:
+                pass
+            if not _stop_event.is_set():
+                generate_shipments()
 
 
 def start_simulation_loop(interval: int = 15):
-    """Schedule the background simulation coroutine."""
+    """Schedule the background simulation coroutine (cancels any existing loop first)."""
+    global _simulation_task, _stop_event
+    # Create a fresh stop event for this new loop
+    _stop_event = asyncio.Event()
     loop = asyncio.get_event_loop()
-    loop.create_task(_simulation_loop(interval))
+    _simulation_task = loop.create_task(_simulation_loop(interval))
+    logger.info("New simulation task created.")
 
 
 def get_active_shipments() -> list:
@@ -154,5 +180,19 @@ def get_active_shipments() -> list:
 
 
 def stop_simulation():
-    global _simulation_running
-    _simulation_running = False
+    """Signal the running loop to stop and cancel its task."""
+    global _simulation_task, _stop_event
+    if _stop_event is not None:
+        _stop_event.set()
+    if _simulation_task is not None and not _simulation_task.done():
+        _simulation_task.cancel()
+        _simulation_task = None
+    logger.info("Simulation stopped.")
+
+
+def mark_shipment_delivered(shipment_id: str, fields: dict) -> None:
+    """Immediately update a shipment in the in-memory store as delivered."""
+    if shipment_id in _active_shipments:
+        _active_shipments[shipment_id].update(fields)
+        logger.info(f"[{shipment_id}] marked as delivered in active store")
+

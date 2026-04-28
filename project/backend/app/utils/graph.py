@@ -71,6 +71,10 @@ def dijkstra(
     Returns (path, total_hours, total_distance_km).
     Returns (None, inf, inf) if no path exists.
     """
+    # Guard: unknown city
+    if start not in graph or end not in graph:
+        return None, float("inf"), float("inf")
+
     dist = {city: float("inf") for city in graph}
     km_dist = {city: 0.0 for city in graph}
     prev: Dict[str, Optional[str]] = {city: None for city in graph}

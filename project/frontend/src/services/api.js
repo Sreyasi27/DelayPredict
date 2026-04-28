@@ -46,4 +46,19 @@ export const getHealth = () =>
 export const getWeather = () =>
   api.get('/weather').then((r) => r.data.weather);
 
+/**
+ * Hybrid Intelligence Decision Pipeline
+ * POST /api/v1/analyze-shipment
+ * Runs: Weather → ML → Gemini AI → Dijkstra (if needed)
+ */
+export const analyzeShipment = (payload) =>
+  api.post('/analyze-shipment', payload).then((r) => r.data);
+
+/**
+ * Mark a shipment as delivered immediately (demo/prototype action).
+ * PATCH /api/v1/shipments/{id}/deliver
+ */
+export const markDelivered = (shipmentId) =>
+  api.patch(`/shipments/${shipmentId}/deliver`).then((r) => r.data);
+
 export default api;

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import {
   MapContainer,
   TileLayer,
@@ -47,6 +47,13 @@ function severityColor(sev = 0) {
   return '#10b981';
 }
 
+/* ── Static alternate demo route ──────────────────────────────────────────
+   Shows a pre-computed alternate corridor to illustrate rerouting concept.
+   Mumbai → Pune → Hyderabad → Bengaluru → Chennai (vs. direct Mumbai→Chennai)
+─────────────────────────────────────────────────────────────────────────── */
+const DEMO_ALT_ROUTE = ['Mumbai', 'Pune', 'Hyderabad', 'Bengaluru', 'Chennai'];
+const DEMO_ALT_PATH  = DEMO_ALT_ROUTE.map((c) => CITY_COORDS[c]);
+
 /* ── Auto-fit map to selected shipment ─────────────────────────────────── */
 function MapFlyTo({ center, zoom }) {
   const map = useMap();
@@ -61,27 +68,23 @@ export default function MapView({
   shipments = [],
   selectedId = null,
   onSelectShipment,
-  routeData = null,   // { original_route, optimized_route } from Dijkstra
-  weatherData = {},   // { city: { severity, description, icon } }
+  routeData = null,
+  weatherData = {},
 }) {
   const selected = shipments.find((s) => s.id === selectedId);
   const flyCenter = selected
     ? CITY_COORDS[selected.current_location] || [21.0, 78.0]
     : null;
 
-  /* Build polyline paths for routes */
+  /* Build polyline paths for Dijkstra routes */
   const originalPath = useMemo(() => {
     if (!routeData?.original_route) return null;
-    return routeData.original_route
-      .map((city) => CITY_COORDS[city])
-      .filter(Boolean);
+    return routeData.original_route.map((city) => CITY_COORDS[city]).filter(Boolean);
   }, [routeData]);
 
   const optimizedPath = useMemo(() => {
     if (!routeData?.optimized_route) return null;
-    return routeData.optimized_route
-      .map((city) => CITY_COORDS[city])
-      .filter(Boolean);
+    return routeData.optimized_route.map((city) => CITY_COORDS[city]).filter(Boolean);
   }, [routeData]);
 
   /* Shipment route polylines for dashboard overview */
@@ -93,6 +96,7 @@ export default function MapView({
         path: s.route.map((c) => CITY_COORDS[c]).filter(Boolean),
         color: RISK_COLORS[s.risk_level || 'low'],
         selected: s.id === selectedId,
+        delivered: s.status === 'delivered',
       })),
     [shipments, selectedId]
   );
@@ -105,7 +109,7 @@ export default function MapView({
       zoomControl={true}
       attributionControl={false}
     >
-      {/* Dark CartoDB tiles — no API key needed */}
+      {/* Dark CartoDB tiles */}
       <TileLayer
         url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         attribution='&copy; <a href="https://carto.com/">CARTO</a>'
@@ -115,15 +119,28 @@ export default function MapView({
       {/* Fly to selected shipment's city */}
       {flyCenter && <MapFlyTo center={flyCenter} zoom={7} />}
 
-      {/* ── Dashboard mode: shipment route polylines ───────────────────── */}
-      {!routeData && shipmentPaths.map(({ id, path, color, selected }) => (
+      {/* ── Static alternate demo route (always visible in dashboard mode) ── */}
+      {!routeData && (
+        <Polyline
+          positions={DEMO_ALT_PATH}
+          pathOptions={{
+            color: '#f97316',     // orange — distinct from shipment routes
+            weight: 2,
+            opacity: 0.55,
+            dashArray: '4 8',     // sparse dash = "alternate / prototype"
+          }}
+        />
+      )}
+
+      {/* ── Dashboard mode: live shipment route polylines ──────────────── */}
+      {!routeData && shipmentPaths.map(({ id, path, color, selected, delivered }) => (
         <Polyline
           key={`route-${id}`}
           positions={path}
           pathOptions={{
-            color,
+            color: delivered ? '#6b7280' : color,
             weight: selected ? 3 : 1.5,
-            opacity: selected ? 0.9 : 0.35,
+            opacity: delivered ? 0.2 : selected ? 0.9 : 0.4,
             dashArray: selected ? undefined : '6 4',
           }}
         />
@@ -152,7 +169,9 @@ export default function MapView({
       {/* ── City markers (all 10 cities) ──────────────────────────────── */}
       {Object.entries(CITY_COORDS).map(([city, pos]) => {
         const weather = weatherData[city];
-        const cityShipment = shipments.find((s) => s.current_location === city);
+        const cityShipment = shipments.find(
+          (s) => s.current_location === city && s.status !== 'delivered'
+        );
         const riskColor = cityShipment
           ? RISK_COLORS[cityShipment.risk_level || 'low']
           : '#3b82f6';
@@ -190,7 +209,10 @@ export default function MapView({
                 )}
                 {cityShipment && (
                   <div style={{ fontSize: 12, marginTop: 4, padding: '2px 6px', background: riskColor + '33', borderRadius: 4, color: riskColor, display: 'inline-block' }}>
-                    {cityShipment.id} · {(cityShipment.delay_probability * 100).toFixed(0)}% risk
+                    {cityShipment.id} ·{' '}
+                    {cityShipment.delay_probability != null
+                      ? `${(cityShipment.delay_probability * 100).toFixed(0)}% risk`
+                      : 'risk N/A'}
                   </div>
                 )}
               </div>
@@ -199,12 +221,8 @@ export default function MapView({
             {cityShipment && (
               <Popup>
                 <div style={{ minWidth: 180, fontFamily: 'Inter, sans-serif', fontSize: 13 }}>
-                  <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14 }}>
-                    {city}
-                  </div>
-                  <div style={{ marginBottom: 4 }}>
-                    🚛 <strong>{cityShipment.id}</strong>
-                  </div>
+                  <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14 }}>{city}</div>
+                  <div style={{ marginBottom: 4 }}>🚛 <strong>{cityShipment.id}</strong></div>
                   <div style={{ color: '#555', marginBottom: 2 }}>
                     {cityShipment.origin} → {cityShipment.destination}
                   </div>
@@ -212,16 +230,13 @@ export default function MapView({
                     📦 {cityShipment.cargo} · {cityShipment.weight_kg?.toLocaleString()} kg
                   </div>
                   <div style={{
-                    display: 'inline-block',
-                    padding: '2px 8px',
-                    borderRadius: 4,
-                    background: riskColor + '22',
-                    color: riskColor,
-                    fontWeight: 700,
-                    fontSize: 12,
+                    display: 'inline-block', padding: '2px 8px', borderRadius: 4,
+                    background: riskColor + '22', color: riskColor, fontWeight: 700, fontSize: 12,
                   }}>
-                    {cityShipment.risk_level?.toUpperCase()} RISK ·{' '}
-                    {(cityShipment.delay_probability * 100).toFixed(0)}%
+                    {cityShipment.risk_level?.toUpperCase() || 'LOW'} RISK ·{' '}
+                    {cityShipment.delay_probability != null
+                      ? `${(cityShipment.delay_probability * 100).toFixed(0)}%`
+                      : 'N/A'}
                   </div>
                   {weather && (
                     <div style={{ marginTop: 6, color: '#666', fontSize: 12 }}>
@@ -239,24 +254,24 @@ export default function MapView({
       <div
         style={{
           position: 'absolute',
-          bottom: 24,
-          right: 12,
+          bottom: 24, right: 12,
           zIndex: 1000,
-          background: 'rgba(13,20,33,0.9)',
+          background: 'rgba(13,20,33,0.92)',
           border: '1px solid rgba(255,255,255,0.1)',
           borderRadius: 8,
-          padding: '8px 12px',
+          padding: '10px 14px',
           fontSize: 11,
           color: '#cdd5e0',
           backdropFilter: 'blur(8px)',
           pointerEvents: 'none',
+          minWidth: 148,
         }}
       >
         {routeData ? (
           <>
-            <div style={{ marginBottom: 4, fontWeight: 600 }}>Route Legend</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-              <div style={{ width: 20, height: 2, background: '#3b82f6', borderTop: '2px dashed #3b82f6' }} />
+            <div style={{ marginBottom: 6, fontWeight: 700, fontSize: 12 }}>Route Legend</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <div style={{ width: 20, height: 2, borderTop: '2px dashed #3b82f6' }} />
               Original Route
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -266,13 +281,31 @@ export default function MapView({
           </>
         ) : (
           <>
-            <div style={{ marginBottom: 4, fontWeight: 600 }}>Risk Legend</div>
-            {[['low', '#10b981', 'Low Risk'], ['medium', '#f59e0b', 'Medium'], ['high', '#ef4444', 'High Risk']].map(([, color, label]) => (
-              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                <div style={{ width: 10, height: 10, borderRadius: '50%', background: color }} />
+            <div style={{ marginBottom: 6, fontWeight: 700, fontSize: 12 }}>Map Legend</div>
+
+            {/* Risk marker dots */}
+            {[['low', '#10b981', 'Low Risk'], ['medium', '#f59e0b', 'Medium Risk'], ['high', '#ef4444', 'High Risk']].map(([, color, label]) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
                 {label}
               </div>
             ))}
+
+            <div style={{ height: 1, background: 'rgba(255,255,255,0.1)', margin: '6px 0' }} />
+
+            {/* Route lines */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <svg width={20} height={8}>
+                <line x1={0} y1={4} x2={20} y2={4} stroke="#10b981" strokeWidth={2} strokeDasharray="6 3" />
+              </svg>
+              Active Route
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <svg width={20} height={8}>
+                <line x1={0} y1={4} x2={20} y2={4} stroke="#f97316" strokeWidth={2} strokeDasharray="3 6" />
+              </svg>
+              Alt Demo Path
+            </div>
           </>
         )}
       </div>

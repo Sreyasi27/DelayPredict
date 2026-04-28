@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import List, Optional
+from pydantic import BaseModel, Field
+from typing import List, Optional, Any
 from enum import Enum
 
 
@@ -70,3 +70,40 @@ class HealthResponse(BaseModel):
     model_loaded: bool
     firestore_connected: bool
     shipment_count: int
+
+
+# ── Hybrid Intelligence Pipeline ───────────────────────────────────────────
+
+class AnalyzeShipmentRequest(BaseModel):
+    shipment_id: str = Field(..., example="SHP-001")
+    origin: str = Field(..., example="Mumbai")
+    destination: str = Field(..., example="Delhi")
+    distance: float = Field(..., gt=0, example=1400.0)
+    traffic_score: float = Field(..., ge=0, le=10, example=7.5)
+    weight: float = Field(..., gt=0, example=1500.0)
+    carrier_rating: float = Field(..., ge=1, le=5, example=3.8)
+
+
+class WeatherInfo(BaseModel):
+    city: str
+    description: str
+    severity: float
+    icon: str
+
+
+class AnalyzeShipmentResponse(BaseModel):
+    shipment_id: str
+    risk_percent: float
+    status: str                      # "Delayed" | "On-Time"
+    action: str                      # "continue" | "monitor" | "reroute"
+    action_reason: str
+    weather: WeatherInfo
+    ai_explanation: str
+    ai_recommendation: str
+    original_route: List[str]
+    optimized_route: List[str]
+    original_hours: Optional[float] = None
+    optimized_hours: Optional[float] = None
+    time_saved_minutes: float
+    rerouted: bool
+    input: dict
