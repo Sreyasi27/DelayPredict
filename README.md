@@ -14,21 +14,28 @@ A centralized Control Tower (Admin Panel) that monitors multi-modal shipments (A
 
 ```mermaid
 graph TD
-    subgraph External Data
-        W[Weather API]
-        T[Traffic Data]
+    %% Styling Rules
+    classDef ext fill:#1e293b,stroke:#475569,stroke-width:2px,color:#f8fafc;
+    classDef ai fill:#4f46e5,stroke:#3730a3,stroke-width:2px,color:#ffffff;
+    classDef admin fill:#059669,stroke:#047857,stroke-width:2px,color:#ffffff;
+    classDef dash fill:#ea580c,stroke:#c2410c,stroke-width:2px,color:#ffffff;
+    classDef ship fill:#2563eb,stroke:#1d4ed8,stroke-width:2px,color:#ffffff;
+
+    subgraph External_Data [External Data]
+        W[Weather API]:::ext
+        T[Traffic Data]:::ext
     end
 
-    subgraph AI Engine
-        ML[Delay Prediction ML]
-        RO[Dijkstra Route Optimizer]
-        GEM[Gemini AI Explanations]
+    subgraph AI_Engine [AI Engine]
+        ML[Delay Prediction ML]:::ai
+        RO[Dijkstra Route Optimizer]:::ai
+        GEM[Gemini AI Explanations]:::ai
     end
 
-    subgraph SupplyAI Platform
-        CT[Admin Panel / Control Tower]
-        OD[Operator Dashboard <br> Air / Land / Water]
-        SHIP[Live Shipments]
+    subgraph SupplyAI_Platform [SupplyAI Platform]
+        CT[Admin Panel / Control Tower]:::admin
+        OD[Operator Dashboard <br> Air / Land / Water]:::dash
+        SHIP[Live Shipments]:::ship
     end
 
     W --> ML
