@@ -56,7 +56,7 @@ graph TD
 - **Generative AI:** Google Gemini 1.5 Flash (For human-readable reasoning and recommendations)
 - **Data / Real-time:** In-memory simulation loop (or Firebase Firestore integration)
 
-## 🚀 Future Scope (Hackathon Ready)
+## 🚀 Future Scope 
 
 1. **Event-Based Alerts (Smart Automation)**
    - *Current/Manual:* Admin manually sending storm alerts.
